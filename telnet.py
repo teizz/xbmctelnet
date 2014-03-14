@@ -5,29 +5,29 @@ import threading
 import xbmc
 import time
 
-class TTY(threading.Thread):
+class Puppy(threading.Thread):
   def __init__(self, (socket,address)):
     threading.Thread.__init__(self)
     self.socket=socket
     self.address=address
-    self.running=True
+    self.living=True
     self.player=xbmc.Player()
 
-  def stop(self):
+  def drown(self):
     if self.socket:
       self.socket.close()
       self.socket=None
-    self.running=False
+    self.living=False
 
   def run(self):
     #print '%s:%s connected.' % self.address
     self.socket.sendall("\xFF\xFB\x03\xFF\xFB\x01") # IAC WILL SUPRESS IAC WILL ECHO
-    while self.running:
+    while self.living:
       try:
         data = self.socket.recv(8)
         if not data:
           self.socket.close()
-          self.running=False
+          self.living=False
         else:
           # received (chars represented in decimal)
           #print("b %s" % str([ord(c) for c in data]))
@@ -39,13 +39,13 @@ class TTY(threading.Thread):
           self.socket.sendall(data)
       except socket.error as e:
         xbmc.sleep(10)
-    self.stop()
+    self.drown()
     #print '%s:%s disconnected.' % self.address
 
   def parseBytecode(self, v):
     # Special secret hidden keys
     if v == 4:
-      self.running=False
+      self.living=False
       return "\x04" # end of transmission byte
     elif v == 16: # ^P
       xbmc.executebuiltin("PlayerControl(Play)")
@@ -69,35 +69,44 @@ class TTY(threading.Thread):
 
 class TelnetMonitor(xbmc.Monitor):
   def __init__(self):
-    self.running=True
+    self.living=True
     self.pool=set()
 
   def listen(self):
     port=socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     xbmc.log("Binding to port")
-    while not port.getsockname()[1] and self.running:
+    while not port.getsockname()[1] and self.living:
       try: port.bind(('', 51234))
       except: xbmc.sleep(1000) # try once a second
     xbmc.log("BOUND")
     port.settimeout(1)
     port.listen(4)
 
-    while self.running: # wait for socket to connect
+    while self.living: # wait for socket to connect
       try:
-        client=port.accept()
-        newTTY=TTY(client)
-        self.pool.add(newTTY)
-        newTTY.start()
+        leash=port.accept()
+        puppy=Puppy(leash)
+        self.pool.add(puppy)
+        puppy.start()
       except socket.timeout:
         xbmc.sleep(10) # this is needed to give XBMC some time to bud in
-    #  except KeyboardInterrupt:
-    #    print("user sent ctrl+c")
-    #    self.running=False
+        self.prune() # clean dead puppy threads
+      except KeyboardInterrupt:
+        print("user sent ctrl+c")
+        self.living=False
+
+  def prune(self):
+    deadpuppies=[puppy for puppy in self.pool if not puppy.isAlive()]
+    if deadpuppies:
+      print("pruning these dead puppies: %s" % str(deadpuppies))
+      map(self.pool.discard,deadpuppies)
 
   def onAbortRequested(self):
     xbmc.log("xbmc called for shutdown of plugin")
-    for client in self.pool: client.stop()
-    self.running=False
+    self.living=False
+    for puppy in self.pool: puppy.drown()
+    xbmc.sleep(50) # give puppies time to die
+    self.prune()
 
   def onSettingsChanged(self):
     xbmc.log("settings changed")
@@ -105,3 +114,4 @@ class TelnetMonitor(xbmc.Monitor):
 if __name__ == "__main__":
   m=TelnetMonitor()
   m.listen()
+  print("Main thread has ended!")
